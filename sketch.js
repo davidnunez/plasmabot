@@ -1,12 +1,13 @@
 var canvas;
-
-var Motor = function(boardId, boardPortId) {
+var socket;
+var Motor = function(boardId, boardPortId, min, max) {
     this.boardId = boardId;
     this.boardPortId = boardPortId;
-    this.tickMax = 1000;
-    this.tickMin = 0;
+    this.tickMax = max;
+    this.tickMin = min;
     this.tickCurrent = floor(random(this.tickMax));
     this.tickTarget = this.tickCurrent;
+    this.tickActual = this.tickCurrent;
     this.positionX = 40;
     this.positionY = 40;
     this.moving = false;
@@ -24,6 +25,17 @@ Motor.prototype.setMin = function(min) {
     this.tickMin = min;
 }
 
+Motor.prototype.setActual = function(actual) {
+    this.tickActual = actual;
+    if (this.tickActual > this.tickMax) {
+        this.tickMax = this.tickActual;
+    }
+    if (this.tickActual < this.tickMin) {
+        this.tickMin = this.tickActual;
+    }
+
+}
+
 Motor.prototype.draw = function(x, y) {
     push();
     fill('rgb(0,0,0)');
@@ -31,9 +43,12 @@ Motor.prototype.draw = function(x, y) {
     line(0, 0, 0, 500);
     text(this.tickMin, -textWidth(this.tickMin) / 2, -20);
     ellipse(0, map(this.tickCurrent, this.tickMin, this.tickMax, 0, 500), 20, 20);
+    line(-20, map(this.tickActual, this.tickMin, this.tickMax, 0, 500), 20, map(this.tickActual, this.tickMin, this.tickMax, 0, 500));
+
     text(floor(this.tickCurrent), -textWidth(floor(this.tickCurrent)) / 2, map(this.tickCurrent, this.tickMin, this.tickMax, 0, 500) - 20)
     text(this.tickMax, -textWidth(this.tickMax) / 2, 520);
     text(this.label(), -textWidth(this.label()) / 2, 540);
+    text(this.tickActual, -textWidth(this.tickActual) / 2, 560);
     fill('rgb(0,255,0)');
     ellipse(0, map(this.tickTarget, this.tickMin, this.tickMax, 0, 500), 10, 10);
 
@@ -41,12 +56,12 @@ Motor.prototype.draw = function(x, y) {
 }
 
 Motor.prototype.move = function() {
-    //if (this.moving) {
     this.tickCurrent = lerp(this.tickCurrent, this.tickTarget, .04);
-    //};
+    socket.emit('osc',[this.boardId, this.boardPortId, this.tickCurrent]);
 }
 
 Motor.prototype.snapTarget = function() {
+    this.tickCurrent = this.tickActual;
     this.tickTarget = this.tickCurrent;
 }
 
@@ -57,7 +72,6 @@ var Robot = function() {
 };
 
 Robot.prototype.snapTargets = function() {
-    console.log("snapping targets");
     for (var i = this.motors.length - 1; i >= 0; i--) {
         this.motors[i].snapTarget();
     };
@@ -67,11 +81,11 @@ Robot.prototype.setup = function() {
     console.log("setting up a robot");
 
     label = createElement('p', "Move Robot?");
-    label.position(0, 600);
+    label.position(0, 620);
     label.elt.style.float = "right";
     label.elt.style.margin = 0;
     this.moveCheckbox = createCheckbox("", false);
-    this.moveCheckbox.position(100, 600);
+    this.moveCheckbox.position(100, 620);
 
 }
 
@@ -98,10 +112,6 @@ Robot.prototype.addMotor = function(motor) {
     b = createButton("max", motor.label());
     b.position(windowWidth / 2 + 120, 50 + (30 * this.motors.length));
     b.mousePressed(on_button_max);
-
-
-    //b.mousePressed(on_move_robot);
-    //b.mousePressed(on_button_max);
 }
 
 Robot.prototype.draw = function() {
@@ -133,26 +143,33 @@ var robot;
 
 function setup() {
     robot = new Robot();
-    // uncomment this line to make the canvas the full size of the window
     canvas = createCanvas(windowWidth / 2, windowHeight);
-    robot.addMotor(new Motor(1, "A"));
-    robot.addMotor(new Motor(1, "B"));
-    robot.addMotor(new Motor(2, "A"));
-    robot.addMotor(new Motor(2, "B"));
-    robot.addMotor(new Motor(3, "A"));
-    robot.addMotor(new Motor(3, "B"));
-    robot.addMotor(new Motor(4, "A"));
-    robot.addMotor(new Motor(4, "B"));
-    robot.addMotor(new Motor(5, "A"));
-    robot.addMotor(new Motor(5, "B"));
-    robot.addMotor(new Motor(6, "A"));
-    robot.addMotor(new Motor(6, "B"));
+    robot.addMotor(new Motor(1, "A", 0, 1000));
+    robot.addMotor(new Motor(1, "B", 0, 1000));
+    robot.addMotor(new Motor(2, "A", 0, 1000));
+    robot.addMotor(new Motor(2, "B", 0, 1000));
+    robot.addMotor(new Motor(3, "A", 0, 1000));
+    robot.addMotor(new Motor(3, "B", 0, 1000));
+    robot.addMotor(new Motor(4, "A", 0, 1000));
+    robot.addMotor(new Motor(4, "B", 0, 1000));
+    robot.addMotor(new Motor(5, "A", 0, 1000));
+    robot.addMotor(new Motor(5, "B", 0, 1000));
+    robot.addMotor(new Motor(6, "A", 0, 1000));
+    robot.addMotor(new Motor(6, "B", 0, 1000));
     robot.setup();
     robot.getPose();
 
     b = createButton("Snap Targets");
-    b.position(100, 630);
+    b.position(100, 640);
     b.mousePressed(on_button_snap_targets);
+
+    socket = io.connect('localhost:8080');
+    socket.on('osc',
+        function(data) {
+            on_osc_event(data);
+        }
+    );
+
 }
 
 function draw() {
@@ -202,5 +219,18 @@ function on_button_max(evt) {
 }
 
 function on_button_snap_targets(evt) {
-	robot.snapTargets();
+    robot.snapTargets();
+}
+
+function on_osc_event(data) {
+    var command = data.address.split('_')[0];
+    console.log("Got: " + command);
+    switch (command) {
+        case "/pos":
+            var motors = robot.getMotorsByLabel(data.address.split('_')[1]);
+            for (var i = motors.length - 1; i >= 0; i--) {
+                motors[i].setActual(data.args[0]);
+            };
+            break;
+    }
 }
