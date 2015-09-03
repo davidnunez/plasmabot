@@ -51,16 +51,17 @@ function handleRequest(req, res) {
 
 var  udpPort  =  new  osc.UDPPort({    
     localAddress:   "0.0.0.0",
-    localPort:  5001
+    localPort:  5001,
+    remotePort: 5005
 }); 
+
 // Listen for incoming OSC bundles. 
 udpPort.on("message",  function (oscMsg)  {    
-    //console.log("An OSC msg just arrived!",  oscMsg);
+    console.log("An OSC msg just arrived!",  oscMsg);
     io.sockets.emit('osc', oscMsg);
 });
 
 udpPort.open();
-
 
 var io = require('socket.io').listen(server);
 io.sockets.on('connection',
@@ -68,11 +69,12 @@ io.sockets.on('connection',
         console.log("We have a new client: " + socket.id);
         socket.on('osc',
             function(data) {
-                //console.log("Received: 'osc' " + data);
+                //console.log(data);
+                //console.log("Received: 'osc' " + data + " as a " + typeof data);
                 udpPort.send({
                     address: "/update",
                     args: data
-                },"127.0.0.1", 5005);
+                });
 
             }
         );
